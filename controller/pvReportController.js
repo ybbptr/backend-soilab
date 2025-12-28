@@ -511,23 +511,25 @@ const getPVReports = asyncHandler(async (req, res) => {
     employee = await Employee.findOne({ user: req.user.id })
       .select('_id')
       .lean();
+
     if (!employee) throwError('Karyawan tidak ditemukan', 404);
   }
 
   const filter = {};
+
+  if (employee) {
+    filter.created_by = employee._id;
+  }
+
+  if (req.query.project) {
+    filter.project = req.query.project;
+  }
 
   if (search) {
     filter.$or = [
       { voucher_number: { $regex: search, $options: 'i' } },
       { pv_number: { $regex: search, $options: 'i' } }
     ];
-  }
-
-  if (req.query.project) filter.project = req.query.project;
-
-  // 🔥 filter khusus karyawan
-  if (employee) {
-    filter.created_by = employee._id;
   }
 
   const sortOption = { createdAt: -1 };
@@ -537,7 +539,8 @@ const getPVReports = asyncHandler(async (req, res) => {
     const skip = (page - 1) * limit;
 
     const totalItems = await PVReport.countDocuments(filter);
-    const rows = await PVReport.find(filter)
+
+    const data = await PVReport.find(filter)
       .populate('created_by', 'name')
       .populate('project', 'project_name')
       .skip(skip)
@@ -551,13 +554,14 @@ const getPVReports = asyncHandler(async (req, res) => {
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      data: rows
+      data
     });
   }
 
   if (mode === 'cursor') {
-    if (req.query.cursor)
+    if (req.query.cursor) {
       filter.createdAt = { $lt: new Date(req.query.cursor) };
+    }
 
     const rows = await PVReport.find(filter)
       .populate('created_by', 'name')

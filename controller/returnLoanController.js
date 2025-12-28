@@ -1099,25 +1099,35 @@ const getAllReturnLoan = asyncHandler(async (req, res) => {
     employee = await Employee.findOne({ user: req.user.id })
       .select('_id')
       .lean();
+
     if (!employee) throwError('Karyawan tidak ditemukan', 404);
   }
 
   const filter = {};
 
-  if (status) filter.status = status;
-  if (project) filter['returned_items.project'] = project;
-
-  // 🔥 filter karyawan
   if (employee) {
     filter.borrower = employee._id;
   }
 
-  if (search) {
-    filter.$or = [
-      { loan_number: { $regex: search, $options: 'i' } },
-      { 'returned_items.product_code': { $regex: search, $options: 'i' } },
-      { 'returned_items.brand': { $regex: search, $options: 'i' } }
-    ];
+  if (status) {
+    filter.status = status;
+  }
+
+  // 🔥 returned_items WAJIB elemMatch
+  if (project || search) {
+    filter.returned_items = { $elemMatch: {} };
+
+    if (project) {
+      filter.returned_items.$elemMatch.project = project;
+    }
+
+    if (search) {
+      filter.$or = [
+        { loan_number: { $regex: search, $options: 'i' } },
+        { 'returned_items.product_code': { $regex: search, $options: 'i' } },
+        { 'returned_items.brand': { $regex: search, $options: 'i' } }
+      ];
+    }
   }
 
   const baseQuery = ReturnLoan.find(filter)
@@ -1138,7 +1148,8 @@ const getAllReturnLoan = asyncHandler(async (req, res) => {
     const skip = (page - 1) * limit;
 
     const totalItems = await ReturnLoan.countDocuments(filter);
-    const rows = await baseQuery
+
+    const data = await baseQuery
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 })
@@ -1149,13 +1160,14 @@ const getAllReturnLoan = asyncHandler(async (req, res) => {
       limit,
       totalItems,
       totalPages: Math.ceil(totalItems / limit),
-      data: rows
+      data
     });
   }
 
   if (mode === 'cursor') {
-    if (req.query.cursor)
+    if (req.query.cursor) {
       filter.createdAt = { $lt: new Date(req.query.cursor) };
+    }
 
     const rows = await baseQuery
       .sort({ createdAt: -1 })
