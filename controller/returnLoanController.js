@@ -1094,40 +1094,35 @@ const getAllReturnLoan = asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
   const { status, project, search } = req.query;
 
-  let employee = null;
-  if (req.user.role === 'karyawan') {
-    employee = await Employee.findOne({ user: req.user.id })
-      .select('_id')
-      .lean();
-
-    if (!employee) throwError('Karyawan tidak ditemukan', 404);
-  }
-
   const filter = {};
 
-  if (employee) {
-    filter.borrower = employee._id;
+  // 🔥 scope karyawan (HARUS sama dengan dashboard)
+  if (req.user.role === 'karyawan') {
+    const me = await Employee.findOne({ user: req.user.id })
+      .select('_id')
+      .lean();
+    if (!me) throwError('Karyawan tidak ditemukan', 404);
+
+    filter.borrower = {
+      $exists: true,
+      $ne: null,
+      $eq: me._id
+    };
   }
 
   if (status) {
     filter.status = status;
   }
 
-  // 🔥 returned_items WAJIB elemMatch
-  if (project || search) {
-    filter.returned_items = { $elemMatch: {} };
+  // 🔥 filter array dengan elemMatch
+  if (project) {
+    filter.returned_items = {
+      $elemMatch: { project }
+    };
+  }
 
-    if (project) {
-      filter.returned_items.$elemMatch.project = project;
-    }
-
-    if (search) {
-      filter.$or = [
-        { loan_number: { $regex: search, $options: 'i' } },
-        { 'returned_items.product_code': { $regex: search, $options: 'i' } },
-        { 'returned_items.brand': { $regex: search, $options: 'i' } }
-      ];
-    }
+  if (search) {
+    filter.loan_number = { $regex: search, $options: 'i' };
   }
 
   const baseQuery = ReturnLoan.find(filter)
@@ -1148,7 +1143,6 @@ const getAllReturnLoan = asyncHandler(async (req, res) => {
     const skip = (page - 1) * limit;
 
     const totalItems = await ReturnLoan.countDocuments(filter);
-
     const data = await baseQuery
       .skip(skip)
       .limit(limit)

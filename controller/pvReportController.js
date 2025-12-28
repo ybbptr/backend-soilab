@@ -506,19 +506,19 @@ const getPVReports = asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
   const search = req.query.search || '';
 
-  let employee = null;
-  if (req.user.role === 'karyawan') {
-    employee = await Employee.findOne({ user: req.user.id })
-      .select('_id')
-      .lean();
-
-    if (!employee) throwError('Karyawan tidak ditemukan', 404);
-  }
-
   const filter = {};
 
-  if (employee) {
-    filter.created_by = employee._id;
+  if (req.user.role === 'karyawan') {
+    const me = await Employee.findOne({ user: req.user.id })
+      .select('_id')
+      .lean();
+    if (!me) throwError('Karyawan tidak ditemukan', 404);
+
+    filter.created_by = {
+      $exists: true,
+      $ne: null,
+      $eq: me._id
+    };
   }
 
   if (req.query.project) {
@@ -539,7 +539,6 @@ const getPVReports = asyncHandler(async (req, res) => {
     const skip = (page - 1) * limit;
 
     const totalItems = await PVReport.countDocuments(filter);
-
     const data = await PVReport.find(filter)
       .populate('created_by', 'name')
       .populate('project', 'project_name')
