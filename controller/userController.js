@@ -275,6 +275,13 @@ const confirmPassword = asyncHandler(async (req, res) => {
 // --------------------------------- CHANGE EMAIL OTP START ---------------------------------
 const requestEmailUpdateOtp = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
+  if (req.user?.role === 'karyawan') {
+    throwError(
+      'Email akun karyawan tidak bisa diubah. Hubungi admin jika ingin mengubah email anda.',
+      403
+    );
+  }
+
   const { pcToken, newEmail, delivery = 'gmail' } = req.body || {};
 
   if (!pcToken || !newEmail)

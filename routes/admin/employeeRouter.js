@@ -1,12 +1,13 @@
 const express = require('express');
 const {
-  getAllUserEmails,
   addEmployee,
   getEmployee,
   getEmployees,
   removeEmployee,
   updateEmployee,
   updateEmployeePages,
+  resetEmployeePassword,
+  updateEmployeeEmail,
   downloadEmployeeDocs
 } = require('../../controller/admin/employeeController');
 const Router = express.Router();
@@ -52,13 +53,12 @@ Router.post(
   addEmployee
 );
 
-Router.get('/email-employees', getAllUserEmails);
 Router.get('/all-employee', getEmployees);
 
 Router.get('/:id/download', downloadEmployeeDocs);
 Router.get('/:id', getEmployee);
 Router.delete('/remove/:id', removeEmployee);
-Router.put(
+Router.patch(
   '/update/:id',
   uploadEmployeeFiles.fields([
     { name: 'ktp', maxCount: 1 },
@@ -72,6 +72,9 @@ Router.put(
   updateEmployee
 );
 
-Router.put('/update/pages/:id', updateEmployeePages);
+Router.patch('/update/reset-password/:id', resetEmployeePassword);
+Router.patch('/update/change-email/:id', updateEmployeeEmail);
+
+Router.patch('/update/pages/:id', updateEmployeePages);
 
 module.exports = Router;

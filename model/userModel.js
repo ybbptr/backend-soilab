@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       minlength: [8, 'Password minimal 8 karakter'],
       required: function () {
-        return this.authProvider === 'local';
+        return this.oauthProvider === 'local';
       },
       select: false,
       validate: {

@@ -1,5 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const throwError = require('../../utils/throwError');
+const bcrypt = require('bcrypt');
 const {
   uploadBuffer,
   getFileUrl,
@@ -18,7 +19,8 @@ const { employeePages } = require('../../constants');
 
 const addEmployee = asyncHandler(async (req, res) => {
   const {
-    user,
+    email,
+    password,
     name,
     nik,
     age,
@@ -41,19 +43,33 @@ const addEmployee = asyncHandler(async (req, res) => {
     pages = []
   } = req.body || {};
 
-  if (!user || !name || !nik || !employment_type || !position) {
-    throwError('Field ini harus diisi', 400);
+  if (
+    !email ||
+    !password ||
+    !name ||
+    !phone ||
+    !nik ||
+    !employment_type ||
+    !position
+  ) {
+    throwError('Field wajib belum lengkap', 400);
   }
 
-  // 🔒 pastikan pages array
+  if (!email.endsWith('@soilab.id')) {
+    throwError('Email harus menggunakan domain @soilab.id', 400);
+  }
+
+  const existing = await User.findOne({ email });
+  if (existing) {
+    throwError('Email sudah terdaftar', 400);
+  }
+
+  // validasi pages
   if (!Array.isArray(pages)) {
     throwError('Pages harus berupa array', 400);
   }
 
-  // 🔄 normalisasi ke lowercase
   const normalizedPages = pages.map((p) => String(p).toLowerCase());
-
-  // ❌ validasi enum
   const invalidPages = normalizedPages.filter(
     (p) => !employeePages.includes(p)
   );
@@ -62,9 +78,22 @@ const addEmployee = asyncHandler(async (req, res) => {
     throwError(`Pages tidak valid: ${invalidPages.join(', ')}`, 400);
   }
 
-  // 1️⃣ buat employee
-  const employee = new Employee({
-    user,
+  // 1️⃣ create USER
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  const user = await User.create({
+    email,
+    name,
+    phone,
+    password: hashedPassword,
+    role: 'karyawan',
+    oauthProvider: 'local',
+    emailVerified: true
+  });
+
+  // 2️⃣ create EMPLOYEE
+  const employee = await Employee.create({
+    user: user._id,
     name,
     nik,
     age,
@@ -86,11 +115,6 @@ const addEmployee = asyncHandler(async (req, res) => {
     end_date,
     pages: normalizedPages
   });
-
-  await employee.save();
-
-  // 2️⃣ update role user
-  await User.findByIdAndUpdate(user, { role: 'karyawan' });
 
   res.status(201).json({
     message: 'Karyawan berhasil ditambahkan',
@@ -236,35 +260,38 @@ const removeEmployee = asyncHandler(async (req, res) => {
   session.startTransaction();
 
   try {
-    const employee = await Employee.findById(req.params.id);
-    if (!employee) throwError('Data karyawan tidak ada!', 400);
+    const employee = await Employee.findById(req.params.id).session(session);
+    if (!employee) throwError('Data karyawan tidak ada!', 404);
 
-    if (employee.user) {
-      await User.findByIdAndUpdate(
-        employee.user,
-        { role: 'user' },
-        { session }
-      );
-    }
-
+    // 1️⃣ hapus dokumen di storage
     if (employee.documents) {
-      for (const [key, value] of Object.entries(employee.documents)) {
-        if (value && value.key) {
+      for (const value of Object.values(employee.documents)) {
+        if (value?.key) {
           await deleteFile(value.key);
         }
       }
     }
 
+    // 2️⃣ lepas relasi loan
     await Loan.updateMany(
       { employee: employee._id },
       { $set: { employee: null } },
       { session }
     );
 
+    // 3️⃣ hapus employee
     await employee.deleteOne({ session });
 
+    // 4️⃣ hapus user (HARD DELETE)
+    if (employee.user) {
+      await User.findByIdAndDelete(employee.user, { session });
+    }
+
     await session.commitTransaction();
-    res.status(200).json({ message: 'Data karyawan berhasil dihapus.' });
+
+    res.status(200).json({
+      message: 'Karyawan dan akun berhasil dihapus'
+    });
   } catch (err) {
     await session.abortTransaction();
     console.error(err);
@@ -278,10 +305,7 @@ const updateEmployee = asyncHandler(async (req, res) => {
   const employee = await Employee.findById(req.params.id);
   if (!employee) throwError('Karyawan tidak ditemukan!', 404);
 
-  const prevUserId = employee.user.toString();
-
-  const fields = [
-    'user',
+  const employeeFields = [
     'name',
     'nik',
     'age',
@@ -303,13 +327,23 @@ const updateEmployee = asyncHandler(async (req, res) => {
     'end_date'
   ];
 
-  for (const field of fields) {
+  for (const field of employeeFields) {
     if (req.body[field] !== undefined) {
       employee[field] = req.body[field];
     }
   }
 
-  // handle dokumen update
+  if (employee.user) {
+    const userUpdate = {};
+
+    if (req.body.name) userUpdate.name = req.body.name;
+    if (req.body.phone) userUpdate.phone = req.body.phone;
+
+    if (Object.keys(userUpdate).length) {
+      await User.findByIdAndUpdate(employee.user, userUpdate);
+    }
+  }
+
   if (req.files) {
     for (const field of [
       'ktp',
@@ -323,13 +357,14 @@ const updateEmployee = asyncHandler(async (req, res) => {
         const file = req.files[field][0];
         const ext = path.extname(file.originalname);
 
-        // hapus file lama
         if (employee.documents?.[field]?.key) {
           await deleteFile(employee.documents[field].key);
         }
 
         const key = `karyawan/${employee._id}/${field}_${formatDate()}${ext}`;
-        await uploadBuffer(key, file.buffer, { contentType: file.mimetype });
+        await uploadBuffer(key, file.buffer, {
+          contentType: file.mimetype
+        });
 
         employee.documents[field] = {
           key,
@@ -343,21 +378,10 @@ const updateEmployee = asyncHandler(async (req, res) => {
 
   await employee.save();
 
-  // kalau user diganti → update role
-  if (req.body.user && req.body.user !== prevUserId) {
-    await User.findByIdAndUpdate(prevUserId, { role: 'user' });
-    await User.findByIdAndUpdate(req.body.user, { role: 'karyawan' });
-  }
-
   res.status(200).json({
     message: 'Data karyawan berhasil diperbarui',
     data: employee
   });
-});
-
-const getAllUserEmails = asyncHandler(async (req, res) => {
-  const users = await User.find({ role: 'user' }).select('email');
-  res.json(users);
 });
 
 const downloadEmployeeDocs = asyncHandler(async (req, res) => {
@@ -389,13 +413,85 @@ const downloadEmployeeDocs = asyncHandler(async (req, res) => {
   await archive.finalize();
 });
 
+const resetEmployeePassword = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') {
+    throwError('Akses ditolak. Hanya admin yang diizinkan.', 403);
+  }
+
+  const { id } = req.params;
+  const { newPassword } = req.body;
+
+  if (!newPassword) {
+    throwError('Password baru wajib diisi', 400);
+  }
+
+  if (newPassword.length < 8 || !/\d/.test(newPassword)) {
+    throwError('Password minimal 8 karakter dan mengandung angka', 400);
+  }
+
+  const employee = await Employee.findById(id);
+  if (!employee || !employee.user) {
+    throwError('Karyawan tidak ditemukan', 404);
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+  await User.findByIdAndUpdate(employee.user, {
+    password: hashedPassword
+  });
+
+  res.status(200).json({
+    message: 'Password karyawan berhasil di-reset'
+  });
+});
+
+const updateEmployeeEmail = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') {
+    throwError('Akses ditolak', 403);
+  }
+
+  const { id } = req.params;
+  const { email } = req.body;
+
+  if (!email) {
+    throwError('Email wajib diisi', 400);
+  }
+
+  if (!email.endsWith('@soilab.id')) {
+    throwError('Email harus menggunakan domain @soilab.id', 400);
+  }
+
+  const employee = await Employee.findById(id);
+  if (!employee || !employee.user) {
+    throwError('Karyawan tidak ditemukan', 404);
+  }
+
+  const emailUsed = await User.findOne({
+    email,
+    _id: { $ne: employee.user }
+  });
+
+  if (emailUsed) {
+    throwError('Email sudah digunakan', 400);
+  }
+
+  await User.findByIdAndUpdate(employee.user, {
+    email
+  });
+
+  res.json({
+    message: 'Email karyawan berhasil diperbarui'
+  });
+});
+
 module.exports = {
-  getAllUserEmails,
   addEmployee,
   getEmployee,
   getEmployees,
   removeEmployee,
   updateEmployee,
   updateEmployeePages,
+  resetEmployeePassword,
+  updateEmployeeEmail,
   downloadEmployeeDocs
 };

@@ -43,6 +43,13 @@ const getMyProfile = asyncHandler(async (req, res) => {
 });
 
 const updateMyProfile = asyncHandler(async (req, res) => {
+  if (req.body.email || req.body.password) {
+    throwError(
+      'Email dan password tidak dapat diubah melalui menu profil',
+      403
+    );
+  }
+
   const employee = await Employee.findOne({ user: req.user.id });
   if (!employee) throwError('Profil karyawan tidak ditemukan!', 404);
 
@@ -52,7 +59,6 @@ const updateMyProfile = asyncHandler(async (req, res) => {
     'age',
     'phone',
     'address',
-    'employment_type',
     'religion',
     'height',
     'weight',
@@ -62,10 +68,7 @@ const updateMyProfile = asyncHandler(async (req, res) => {
     'status',
     'bank_account_number',
     'emergency_contact_number',
-    'position',
-    'blood_type',
-    'start_date',
-    'end_date'
+    'blood_type'
   ];
 
   for (const field of fields) {
@@ -88,13 +91,14 @@ const updateMyProfile = asyncHandler(async (req, res) => {
         const file = req.files[field][0];
         const ext = path.extname(file.originalname);
 
-        // hapus file lama kalau ada
         if (employee.documents?.[field]?.key) {
           await deleteFile(employee.documents[field].key);
         }
 
         const key = `karyawan/${employee._id}/${field}_${formatDate()}${ext}`;
-        await uploadBuffer(key, file.buffer, { contentType: file.mimetype });
+        await uploadBuffer(key, file.buffer, {
+          contentType: file.mimetype
+        });
 
         employee.documents[field] = {
           key,
