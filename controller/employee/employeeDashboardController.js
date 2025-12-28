@@ -5,6 +5,7 @@ const Loan = require('../../model/loanModel');
 const ReturnLoan = require('../../model/returnLoanModel');
 const ProgressProject = require('../../model/progressProjectModel');
 const ExpenseRequest = require('../../model/expenseRequestModel');
+const Employee = require('../../model/employeeModel');
 const PvReport = require('../../model/pvReportModel');
 
 const getEmployeeDashboard = asyncHandler(async (req, res) => {

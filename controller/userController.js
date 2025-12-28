@@ -694,8 +694,24 @@ const getCurrentUser = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id).select(
     'name phone role email updatedAt'
   );
-  if (!user) return throwError('User tidak ditemukan!', 404);
-  res.status(200).json(user);
+
+  if (!user) throwError('User tidak ditemukan!', 404);
+
+  const response = {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    updatedAt: user.updatedAt
+  };
+
+  // 🔥 hanya karyawan yang punya pages
+  if (user.role === 'karyawan') {
+    response.pages = req.user.pages || [];
+  }
+
+  res.status(200).json(response);
 });
 
 const updateUser = asyncHandler(async (req, res) => {
