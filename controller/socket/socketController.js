@@ -247,16 +247,29 @@ async function onConnection(nsp, socket) {
           if (dup) {
             const dto = mapMessage(dup);
 
-            // broadcast ke room percakapan
-            nsp.to(String(conversationId)).emit('chat:new', dto);
+            nsp.to(conversationId).emit('chat:new', {
+              ...dto,
+              conversation: {
+                id: String(conversationId),
+                title: conv.title ?? undefined,
+                name: conv.name ?? undefined,
+                type: conv.type ?? undefined
+              }
+            });
 
             // sentuh sidebar: room percakapan + personal rooms
             const memberIds = (conv.members || []).map((m) => String(m.user));
             const touchPayload = {
               conversationId: String(conversationId),
+
               lastMessageAt: dup.createdAt,
-              lastMessage: dto
+              lastMessage: dto,
+
+              title: conv.title ?? undefined,
+              name: conv.name ?? undefined,
+              type: conv.type ?? undefined
             };
+
             nsp.to(String(conversationId)).emit('conv:touch', touchPayload);
             memberIds.forEach((id) =>
               nsp.to(id).emit('conv:touch', touchPayload)
@@ -294,16 +307,28 @@ async function onConnection(nsp, socket) {
 
         const dto = mapMessage(msg);
 
-        // broadcast ke room percakapan
-        nsp.to(String(conversationId)).emit('chat:new', dto);
+        nsp.to(conversationId).emit('chat:new', {
+          ...dto,
+          conversation: {
+            id: String(conversationId),
+            title: conv.title ?? undefined,
+            name: conv.name ?? undefined,
+            type: conv.type ?? undefined
+          }
+        });
 
         // sentuh sidebar (revive & naikkan) → ke room percakapan + personal rooms
         const memberIds = (conv.members || []).map((m) => String(m.user));
         const touchPayload = {
           conversationId: String(conversationId),
           lastMessageAt: msg.createdAt,
-          lastMessage: dto
+          lastMessage: dto,
+
+          title: conv.title ?? undefined,
+          name: conv.name ?? undefined,
+          type: conv.type ?? undefined
         };
+
         nsp.to(String(conversationId)).emit('conv:touch', touchPayload);
         memberIds.forEach((id) => nsp.to(id).emit('conv:touch', touchPayload));
 
@@ -459,7 +484,11 @@ async function onConnection(nsp, socket) {
                 attachments: last.attachments || [],
                 createdAt: last.createdAt
               }
-            : null
+            : null,
+
+          title: conv.title ?? undefined,
+          name: conv.name ?? undefined,
+          type: conv.type ?? undefined
         };
 
         nsp.to(String(conv._id)).emit('chat:delete', {

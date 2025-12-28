@@ -15,7 +15,7 @@ function toWa62(phone) {
   return p.startsWith('0') ? '62' + p.slice(1) : p;
 }
 
-async function sendOtpWa(phone, code, ttlMin = 1) {
+async function sendOtpWa(phone, code, ttlMin = 5) {
   const message = `
 🔐 *Kode OTP SOILAB*
 
