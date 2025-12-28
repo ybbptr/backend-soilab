@@ -1090,6 +1090,9 @@ const deleteReturnLoan = asyncHandler(async (req, res) => {
 });
 
 const getAllReturnLoan = asyncHandler(async (req, res) => {
+  console.log('ROLE:', req.user.role);
+  console.log('USER:', req.user);
+
   const mode = req.query.mode || 'paging';
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
   const { status, project, search } = req.query;
