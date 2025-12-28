@@ -234,7 +234,8 @@ async function onConnection(nsp, socket) {
         const conv = await Conversation.findOne({
           _id: conversationId,
           'members.user': actor.userId
-        });
+        }).populate('members.user', 'name');
+
         if (!conv)
           throw new Error('Percakapan tidak ditemukan / bukan anggota');
 
@@ -252,22 +253,29 @@ async function onConnection(nsp, socket) {
               conversation: {
                 id: String(conversationId),
                 title: conv.title ?? undefined,
-                name: conv.name ?? undefined,
                 type: conv.type ?? undefined
               }
             });
+            let displayName;
+
+            if (conv.type === 'direct') {
+              const other = conv.members.find(
+                (m) => String(m.user._id) !== String(actor.userId)
+              );
+              displayName = other?.user?.name;
+            } else {
+              displayName = conv.title;
+            }
 
             // sentuh sidebar: room percakapan + personal rooms
             const memberIds = (conv.members || []).map((m) => String(m.user));
             const touchPayload = {
               conversationId: String(conversationId),
-
               lastMessageAt: dup.createdAt,
               lastMessage: dto,
 
-              title: conv.title ?? undefined,
-              name: conv.name ?? undefined,
-              type: conv.type ?? undefined
+              displayName,
+              type: conv.type
             };
 
             nsp.to(String(conversationId)).emit('conv:touch', touchPayload);
@@ -316,6 +324,16 @@ async function onConnection(nsp, socket) {
             type: conv.type ?? undefined
           }
         });
+        let displayName;
+
+        if (conv.type === 'direct') {
+          const other = conv.members.find(
+            (m) => String(m.user._id) !== String(actor.userId)
+          );
+          displayName = other?.user?.name;
+        } else {
+          displayName = conv.title;
+        }
 
         // sentuh sidebar (revive & naikkan) → ke room percakapan + personal rooms
         const memberIds = (conv.members || []).map((m) => String(m.user));
@@ -324,9 +342,8 @@ async function onConnection(nsp, socket) {
           lastMessageAt: msg.createdAt,
           lastMessage: dto,
 
-          title: conv.title ?? undefined,
-          name: conv.name ?? undefined,
-          type: conv.type ?? undefined
+          displayName,
+          type: conv.type
         };
 
         nsp.to(String(conversationId)).emit('conv:touch', touchPayload);
@@ -418,7 +435,11 @@ async function onConnection(nsp, socket) {
         const msg = await Message.findById(messageId);
         if (!msg) throw new Error('Pesan tidak ditemukan');
 
-        const conv = await Conversation.findById(msg.conversation);
+        const conv = await Conversation.findById(msg.conversation).populate(
+          'members.user',
+          'name'
+        );
+
         if (!conv) throw new Error('Percakapan tidak ditemukan');
 
         const isMember = conv.members.some(
@@ -470,6 +491,17 @@ async function onConnection(nsp, socket) {
 
         await Message.deleteOne({ _id: msg._id });
 
+        let displayName;
+
+        if (conv.type === 'direct') {
+          const other = conv.members.find(
+            (m) => String(m.user._id) !== String(actor.userId)
+          );
+          displayName = other?.user?.name;
+        } else {
+          displayName = conv.title;
+        }
+
         const last = await refreshConvLastMessage(conv._id);
         const touchPayload = {
           conversationId: String(conv._id),
@@ -486,9 +518,8 @@ async function onConnection(nsp, socket) {
               }
             : null,
 
-          title: conv.title ?? undefined,
-          name: conv.name ?? undefined,
-          type: conv.type ?? undefined
+          displayName,
+          type: conv.type
         };
 
         nsp.to(String(conv._id)).emit('chat:delete', {
