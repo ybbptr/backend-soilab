@@ -1094,14 +1094,22 @@ const getAllReturnLoan = asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
   const { status, project, search } = req.query;
 
+  let employee = null;
+  if (req.user.role === 'karyawan') {
+    employee = await Employee.findOne({ user: req.user.id })
+      .select('_id')
+      .lean();
+    if (!employee) throwError('Karyawan tidak ditemukan', 404);
+  }
+
   const filter = {};
+
   if (status) filter.status = status;
   if (project) filter['returned_items.project'] = project;
 
-  if (req.user.role === 'karyawan') {
-    const me = await Employee.findOne({ user: req.user.id }).select('_id');
-    if (!me) throwError('Karyawan tidak ditemukan', 404);
-    filter.borrower = me._id;
+  // 🔥 filter karyawan
+  if (employee) {
+    filter.borrower = employee._id;
   }
 
   if (search) {

@@ -504,20 +504,30 @@ const addPVReport = asyncHandler(async (req, res) => {
 const getPVReports = asyncHandler(async (req, res) => {
   const mode = req.query.mode || 'paging';
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-
   const search = req.query.search || '';
-  const filter = search
-    ? {
-        $or: [
-          { voucher_number: { $regex: search, $options: 'i' } },
-          { pv_number: { $regex: search, $options: 'i' } }
-        ]
-      }
-    : {};
+
+  let employee = null;
+  if (req.user.role === 'karyawan') {
+    employee = await Employee.findOne({ user: req.user.id })
+      .select('_id')
+      .lean();
+    if (!employee) throwError('Karyawan tidak ditemukan', 404);
+  }
+
+  const filter = {};
+
+  if (search) {
+    filter.$or = [
+      { voucher_number: { $regex: search, $options: 'i' } },
+      { pv_number: { $regex: search, $options: 'i' } }
+    ];
+  }
 
   if (req.query.project) filter.project = req.query.project;
-  if (req.user.role === 'karyawan') {
-    filter.created_by = await getEmployeeId(req);
+
+  // 🔥 filter khusus karyawan
+  if (employee) {
+    filter.created_by = employee._id;
   }
 
   const sortOption = { createdAt: -1 };
