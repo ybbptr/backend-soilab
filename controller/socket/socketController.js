@@ -269,6 +269,13 @@ async function onConnection(nsp, socket) {
               type: conv.type
             };
 
+            nsp.to(String(conversationId)).emit('conv:touch', touchPayload);
+            console.log('DISPLAY NAME =>', displayName);
+
+            memberIds.forEach((id) =>
+              nsp.to(id).emit('conv:touch', touchPayload)
+            );
+
             // **penting**: kirim conv:upsert dengan payload lengkap (viewer-specific)
             await emitConvUpsertForMembers(conv);
 
@@ -323,6 +330,9 @@ async function onConnection(nsp, socket) {
           type: conv.type
         };
         console.log('DISPLAY NAME =>', displayName);
+
+        nsp.to(String(conversationId)).emit('conv:touch', touchPayload);
+        memberIds.forEach((id) => nsp.to(id).emit('conv:touch', touchPayload));
 
         // **penting**: kirim conv:upsert supaya FE langsung punya title/type
         await emitConvUpsertForMembers(conv);
