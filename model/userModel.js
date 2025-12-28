@@ -51,7 +51,7 @@ const userSchema = new mongoose.Schema(
     isCustomerInbox: { type: Boolean, default: false },
     oauthProvider: {
       type: String,
-      enum: ['google', 'facebook', 'local'],
+      enum: ['google', 'local'],
       default: 'local'
     },
     emailVerified: { type: Boolean, default: false },

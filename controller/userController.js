@@ -17,6 +17,8 @@ const {
 } = require('../utils/sessionTokens');
 
 const { generateOtp, hashOtp, verifyOtp, CODE_LEN } = require('../utils/otp');
+const { sendOtpWa } = require('../utils/wablas');
+
 const { sendOtpEmail } = require('../utils/mailer');
 const {
   signPcToken,
@@ -71,20 +73,20 @@ const MAX_ATTEMPTS = 5;
 
 // ---------------------------------- REGISTER OTP ----------------------------------
 const requestRegisterOtp = asyncHandler(async (req, res) => {
-  const { email, name, phone, password } = req.body || {};
+  const { email, name, phone, password, delivery = 'gmail' } = req.body || {};
+
   if (!email || !password || !name || !phone)
-    throwError('Semua field harus di isi!', 400);
+    throwError('Semua field harus diisi!', 400);
+
+  if (!['gmail', 'whatsapp'].includes(delivery))
+    throwError('Delivery OTP tidak valid', 400);
 
   const used = await User.findOne({ email });
   if (used) throwError('Email tidak tersedia!', 400, 'email');
 
-  const existing = await PendingRegistration.findOne({ email });
   const now = Date.now();
-  if (
-    existing &&
-    existing.resendAfter &&
-    existing.resendAfter.getTime() > now
-  ) {
+  const existing = await PendingRegistration.findOne({ email });
+  if (existing?.resendAfter?.getTime() > now) {
     const wait = Math.ceil((existing.resendAfter.getTime() - now) / 1000);
     throwError(`Tunggu ${wait} detik untuk kirim ulang OTP.`, 429);
   }
@@ -93,7 +95,7 @@ const requestRegisterOtp = asyncHandler(async (req, res) => {
   const otp = generateOtp();
   const otpHash = await hashOtp(otp);
 
-  const upserted = await PendingRegistration.findOneAndUpdate(
+  const doc = await PendingRegistration.findOneAndUpdate(
     { email },
     {
       email,
@@ -101,6 +103,7 @@ const requestRegisterOtp = asyncHandler(async (req, res) => {
       phone,
       passwordHash,
       otpHash,
+      delivery,
       otpExpiresAt: new Date(now + OTP_TTL_MS),
       resendAfter: new Date(now + RESEND_BLOCK_MS),
       attempts: 0,
@@ -109,44 +112,42 @@ const requestRegisterOtp = asyncHandler(async (req, res) => {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
-  const to = String(email).trim().toLowerCase();
-  const code = otp;
-
   res.json({
     message: 'OTP diproses',
-    pendingId: upserted._id,
+    pendingId: doc._id,
+    delivery,
     resendIn: Math.floor(RESEND_BLOCK_MS / 1000),
     codeLength: CODE_LEN
   });
 
+  // ⬇️ kirim async
   setImmediate(async () => {
     try {
-      console.log('[MAIL] sending to', to, 'code', code);
-      const data = await sendOtpEmail(to, code, {
-        action: 'Verifikasi Pendaftaran',
-        brand: 'SOILAB',
-        brandUrl: 'https://soilab.id',
-        supportEmail: 'support@soilab.id',
-        logoUrl:
-          'https://backend-test-production-51c5.up.railway.app/assets/soilab-logo.png',
-        primaryColor: '#0e172b'
-      });
-      console.log('[MAIL] sent id=', data?.id, 'to', to);
+      if (delivery === 'whatsapp') {
+        await sendOtpWa(phone, otp, Math.floor(OTP_TTL_MS / 60000));
+      } else {
+        await sendOtpEmail(email, otp, {
+          action: 'Verifikasi Pendaftaran',
+          brand: 'SOILAB',
+          brandUrl: 'https://soilab.id',
+          supportEmail: 'support@soilab.id'
+        });
+      }
     } catch (err) {
-      console.error('[MAIL] FAILED for', to, '-', err?.message || err);
+      console.error('[OTP SEND FAILED]', err?.message || err);
     }
   });
 });
 
 const resendRegisterOtp = asyncHandler(async (req, res) => {
-  const { pendingId, email } = req.body || {};
+  const { pendingId } = req.body || {};
   if (!pendingId) throwError('pendingId wajib diisi', 400);
 
   const doc = await PendingRegistration.findById(pendingId);
   if (!doc) throwError('Sesi OTP tidak ditemukan atau kadaluarsa', 404);
 
   const now = Date.now();
-  if (doc.resendAfter && doc.resendAfter.getTime() > now) {
+  if (doc.resendAfter.getTime() > now) {
     const wait = Math.ceil((doc.resendAfter.getTime() - now) / 1000);
     throwError(`Tunggu ${wait} detik untuk kirim ulang`, 429);
   }
@@ -158,30 +159,25 @@ const resendRegisterOtp = asyncHandler(async (req, res) => {
   doc.resendCount = (doc.resendCount || 0) + 1;
   await doc.save();
 
-  const to = String(email).trim().toLowerCase();
-  const code = otp;
-
   res.json({
     message: 'OTP baru telah dikirim',
-    resendInSeconds: Math.floor(RESEND_BLOCK_MS / 1000),
+    delivery: doc.delivery,
+    resendIn: Math.floor(RESEND_BLOCK_MS / 1000),
     codeLength: CODE_LEN
   });
 
   setImmediate(async () => {
     try {
-      console.log('[MAIL] sending to', to, 'code', code);
-      const data = await sendOtpEmail(to, code, {
-        action: 'Verifikasi Pendaftaran',
-        brand: 'SOILAB',
-        brandUrl: 'https://soilab.id',
-        supportEmail: 'support@soilab.id',
-        logoUrl:
-          'https://backend-test-production-51c5.up.railway.app/assets/soilab-logo.png',
-        primaryColor: '#0e172b'
-      });
-      console.log('[MAIL] sent id=', data?.id, 'to', to);
+      if (doc.delivery === 'whatsapp') {
+        await sendOtpWa(doc.phone, otp, Math.floor(OTP_TTL_MS / 60000));
+      } else {
+        await sendOtpEmail(doc.email, otp, {
+          action: 'Verifikasi Pendaftaran',
+          brand: 'SOILAB'
+        });
+      }
     } catch (err) {
-      console.error('[MAIL] FAILED for', to, '-', err?.message || err);
+      console.error('[OTP RESEND FAILED]', err?.message || err);
     }
   });
 });
@@ -279,71 +275,77 @@ const confirmPassword = asyncHandler(async (req, res) => {
 // --------------------------------- CHANGE EMAIL OTP START ---------------------------------
 const requestEmailUpdateOtp = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
-  const { pcToken, newEmail } = req.body || {};
+  const { pcToken, newEmail, delivery = 'gmail' } = req.body || {};
+
   if (!pcToken || !newEmail)
     throwError('Konfirmasi password & email baru wajib diisi', 400);
 
+  if (!['gmail', 'whatsapp'].includes(delivery))
+    throwError('Delivery OTP tidak valid', 400);
+
   verifyPcToken(pcToken, { userId, purpose: 'EMAIL_UPDATE' });
 
-  const user = await User.findById(userId).select('email oauthProvider');
+  const user = await User.findById(userId).select('email phone oauthProvider');
   if (!user) throwError('User tidak ditemukan', 404);
+
   if (user.oauthProvider && user.oauthProvider !== 'local') {
     throwError('Akun OAuth tidak dapat mengubah email.', 403);
   }
 
   const email = String(newEmail).trim().toLowerCase();
-  if (email === user.email)
-    throwError('Email baru tidak boleh sama.', 400, 'email');
+  if (email === user.email) throwError('Email baru tidak boleh sama.', 400);
 
   const used = await User.findOne({ email });
-  if (used) throwError('Email baru sudah digunakan.', 400, 'email');
+  if (used) throwError('Email baru sudah digunakan.', 400);
 
+  const now = Date.now();
   const existing = await OtpChallenge.findOne({
     user: userId,
     type: 'EMAIL_UPDATE'
   });
-  const now = Date.now();
-  if (existing && existing.resendAfter.getTime() > now) {
+
+  if (existing?.resendAfter?.getTime() > now) {
     const wait = Math.ceil((existing.resendAfter.getTime() - now) / 1000);
     throwError(`Tunggu ${wait} detik untuk kirim ulang OTP.`, 429);
   }
 
   const code = generateOtp();
-  const otpHash = await hashOtp(code);
 
-  const challenge = await OtpChallenge.findOneAndUpdate(
+  const ch = await OtpChallenge.findOneAndUpdate(
     { user: userId, type: 'EMAIL_UPDATE' },
     {
       user: userId,
       type: 'EMAIL_UPDATE',
       email,
-      otpHash,
-      otpExpiresAt: new Date(now + OTP_TTL_MS), // TTL 15 menit sesuai set kamu
+      delivery,
+      otpHash: await hashOtp(code),
+      otpExpiresAt: new Date(now + OTP_TTL_MS),
       resendAfter: new Date(now + RESEND_BLOCK_MS),
       attempts: 0,
       expiresAt: new Date(now + DOC_TTL_MS)
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { upsert: true, new: true }
   );
 
   res.json({
-    message: 'OTP dikirim ke email baru',
-    challengeId: challenge._id,
-    resendIn: Math.floor(RESEND_BLOCK_MS / 1000),
-    codeLength: CODE_LEN
+    message: 'OTP diproses',
+    challengeId: ch._id,
+    delivery,
+    resendIn: Math.floor(RESEND_BLOCK_MS / 1000)
   });
 
   setImmediate(async () => {
     try {
-      await sendOtpEmail(email, code, {
-        action: 'Verifikasi Perubahan Email',
-        brand: 'SOILAB',
-        brandUrl: 'https://soilab.id',
-        supportEmail: 'support@soilab.id',
-        primaryColor: '#0e172b'
-      });
+      if (delivery === 'whatsapp') {
+        await sendOtpWa(user.phone, code);
+      } else {
+        await sendOtpEmail(email, code, {
+          action: 'Verifikasi Perubahan Email',
+          brand: 'SOILAB'
+        });
+      }
     } catch (e) {
-      console.error('[MAIL EMAIL_UPDATE FAILED]', e?.message || e);
+      console.error('[EMAIL UPDATE OTP FAILED]', e);
     }
   });
 });
@@ -351,17 +353,15 @@ const requestEmailUpdateOtp = asyncHandler(async (req, res) => {
 const resendEmailUpdateOtp = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
   const { challengeId } = req.body || {};
-  if (!challengeId) throwError('challengeId wajib diisi', 400);
 
   const ch = await OtpChallenge.findById(challengeId);
-  if (!ch || String(ch.user) !== String(userId) || ch.type !== 'EMAIL_UPDATE') {
-    throwError('Sesi ini telah habis. Silahkan daftar ulang atau kembali', 404);
-  }
+  if (!ch || String(ch.user) !== String(userId))
+    throwError('Sesi OTP tidak valid', 404);
 
   const now = Date.now();
   if (ch.resendAfter.getTime() > now) {
     const wait = Math.ceil((ch.resendAfter.getTime() - now) / 1000);
-    throwError(`Tunggu ${wait} detik untuk kirim ulang.`, 429);
+    throwError(`Tunggu ${wait} detik`, 429);
   }
 
   const code = generateOtp();
@@ -372,21 +372,22 @@ const resendEmailUpdateOtp = asyncHandler(async (req, res) => {
   await ch.save();
 
   res.json({
-    message: 'OTP baru telah dikirim',
-    resendIn: Math.floor(RESEND_BLOCK_MS / 1000)
+    message: 'OTP baru dikirim',
+    delivery: ch.delivery
   });
 
   setImmediate(async () => {
     try {
-      await sendOtpEmail(ch.email, code, {
-        action: 'Verifikasi Perubahan Email',
-        brand: 'SOILAB',
-        brandUrl: 'https://soilab.id',
-        supportEmail: 'support@soilab.id',
-        primaryColor: '#0e172b'
-      });
+      if (ch.delivery === 'whatsapp') {
+        await sendOtpWa(ch.phone || ch.email, code);
+      } else {
+        await sendOtpEmail(ch.email, code, {
+          action: 'Verifikasi Perubahan Email',
+          brand: 'SOILAB'
+        });
+      }
     } catch (e) {
-      console.error('[MAIL EMAIL_UPDATE RESEND FAILED]', e?.message || e);
+      console.error('[EMAIL UPDATE RESEND FAILED]', e);
     }
   });
 });
@@ -457,73 +458,77 @@ const verifyEmailUpdateOtp = asyncHandler(async (req, res) => {
 // body (logged-out): { email }
 // body (logged-in):  {}  ambil req.user.id untuk ambil email
 const requestPasswordResetOtp = asyncHandler(async (req, res) => {
-  const emailRaw = req.body?.email;
-  if (!emailRaw) throwError('Email wajib diisi', 400);
-  const email = String(emailRaw).trim().toLowerCase();
+  const { email, delivery = 'gmail' } = req.body || {};
+  if (!email) throwError('Email wajib diisi', 400);
 
-  const user = await User.findOne({ email }).select('email _id');
+  if (!['gmail', 'whatsapp'].includes(delivery))
+    throwError('Delivery OTP tidak valid', 400);
 
+  const user = await User.findOne({ email }).select(
+    '_id email phone oauthProvider'
+  );
   if (!user) {
-    return res.json({
-      message:
-        'Jika email terdaftar, kami telah mengirim kode OTP ke email tersebut.',
-      sent: true
-    });
+    return res.json({ message: 'Jika email terdaftar, OTP telah dikirim.' });
   }
 
+  if (delivery === 'whatsapp' && !user.phone) {
+    throwError('Nomor anda belum terdaftar. Gunakan reset via gmail.', 400);
+  }
+
+  if (user.oauthProvider && user.oauthProvider !== 'local') {
+    throwError(
+      'Akun Google tidak bisa reset password. Gunakan login Google.',
+      403
+    );
+  }
+
+  const now = Date.now();
   const existing = await OtpChallenge.findOne({
     user: user._id,
     type: 'PASSWORD_RESET'
   });
-  const now = Date.now();
-  if (
-    existing &&
-    existing.resendAfter &&
-    existing.resendAfter.getTime() > now
-  ) {
+
+  if (existing?.resendAfter?.getTime() > now) {
     const wait = Math.ceil((existing.resendAfter.getTime() - now) / 1000);
-    throwError(`Tunggu ${wait} detik untuk kirim ulang OTP.`, 429);
+    throwError(`Tunggu ${wait} detik`, 429);
   }
 
   const code = generateOtp();
-  const otpHash = await hashOtp(code);
 
-  const challenge = await OtpChallenge.findOneAndUpdate(
+  const ch = await OtpChallenge.findOneAndUpdate(
     { user: user._id, type: 'PASSWORD_RESET' },
     {
       user: user._id,
       type: 'PASSWORD_RESET',
       email: user.email,
-      otpHash,
+      delivery,
+      otpHash: await hashOtp(code),
       otpExpiresAt: new Date(now + OTP_TTL_MS),
       resendAfter: new Date(now + RESEND_BLOCK_MS),
       attempts: 0,
       expiresAt: new Date(now + DOC_TTL_MS)
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { upsert: true, new: true }
   );
 
   res.json({
-    message:
-      'Jika email terdaftar, kami telah mengirim kode OTP ke email tersebut.',
-    sent: true,
-    challengeId: challenge._id,
-    resendIn: Math.floor(RESEND_BLOCK_MS / 1000),
-    codeLength: CODE_LEN,
-    ttlMinutes: Math.floor(OTP_TTL_MS / 60000)
+    message: 'OTP diproses',
+    challengeId: ch._id,
+    delivery
   });
 
   setImmediate(async () => {
     try {
-      await sendOtpEmail(user.email, code, {
-        action: 'Reset Password',
-        brand: 'SOILAB',
-        brandUrl: 'https://soilab.id',
-        supportEmail: 'support@soilab.id',
-        primaryColor: '#0e172b'
-      });
+      if (delivery === 'whatsapp') {
+        await sendOtpWa(user.phone, code);
+      } else {
+        await sendOtpEmail(user.email, code, {
+          action: 'Reset Password',
+          brand: 'SOILAB'
+        });
+      }
     } catch (e) {
-      console.error('[MAIL PASSWORD_RESET FAILED]', e?.message || e);
+      console.error('[PASSWORD RESET OTP FAILED]', e);
     }
   });
 });
@@ -558,15 +563,18 @@ const resendPasswordResetOtp = asyncHandler(async (req, res) => {
 
   setImmediate(async () => {
     try {
-      await sendOtpEmail(ch.email, code, {
-        action: 'Reset Password',
-        brand: 'SOILAB',
-        brandUrl: 'https://soilab.id',
-        supportEmail: 'support@soilab.id',
-        primaryColor: '#0e172b'
-      });
+      if (ch.delivery === 'whatsapp') {
+        const user = await User.findById(ch.user).select('phone');
+        if (!user?.phone) return; // safety guard
+        await sendOtpWa(user.phone, code);
+      } else {
+        await sendOtpEmail(ch.email, code, {
+          action: 'Reset Password',
+          brand: 'SOILAB'
+        });
+      }
     } catch (e) {
-      console.error('[MAIL PASSWORD_RESET RESEND FAILED]', e?.message || e);
+      console.error('[PASSWORD RESET RESEND FAILED]', e?.message || e);
     }
   });
 });
@@ -760,30 +768,30 @@ const updatePassword = asyncHandler(async (req, res) => {
 });
 
 const loginUser = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body || {};
   const remember = parseRemember(req);
 
-  console.log('[LOGIN][payload]', {
-    bodyKeys: Object.keys(req.body || {}),
-    queryKeys: Object.keys(req.query || {}),
-    rememberRaw:
-      req.body?.remember ??
-      req.body?.rememberMe ??
-      req.body?.remember_me ??
-      req.query?.remember ??
-      req.query?.rememberMe ??
-      req.query?.remember_me,
-    rememberParsed: remember
-  });
+  if (!email || !password) throwError('Email dan password wajib diisi', 400);
 
-  const user = await User.findOne({ email }).select('+password');
+  const user = await User.findOne({ email }).select('+password oauthProvider');
   if (!user) throwError('Email tidak ditemukan', 401);
-  if (user.role === 'bot') return throwError('Akun bot tidak bisa login', 403);
+  if (user.role === 'bot') throwError('Akun bot tidak bisa login', 403);
+
+  // 🚨 PENTING: bedakan login local vs google
+  if (user.oauthProvider && user.oauthProvider !== 'local') {
+    throwError(
+      'Akun ini terdaftar via Google. Silakan login menggunakan Google.',
+      403
+    );
+  }
+
+  if (!user.password) {
+    throwError('Password tidak tersedia. Silakan reset password.', 403);
+  }
 
   const isValid = await bcrypt.compare(password, user.password);
   if (!isValid) throwError('Password invalid', 401);
 
-  // === Perubahan: generateTokens sekarang bikin Session + RT ber-sid
   const { accessToken, refreshToken } = await generateTokens(user, {
     remember,
     ua: req.headers['user-agent'] || '',
@@ -791,31 +799,20 @@ const loginUser = asyncHandler(async (req, res) => {
   });
 
   const refreshCookieOpts = remember
-    ? { ...baseCookie, maxAge: 7 * 24 * 60 * 60 * 1000 } // persistent 7d
-    : { ...baseCookie }; // session cookie
+    ? { ...baseCookie, maxAge: 7 * 24 * 60 * 60 * 1000 }
+    : { ...baseCookie };
 
-  console.log('[LOGIN] issuing cookies', {
-    remember,
-    accessMaxAgeMs: 30 * 60 * 1000,
-    refreshPersistent: !!refreshCookieOpts.maxAge,
-    baseCookie: {
-      sameSite: baseCookie.sameSite,
-      secure: baseCookie.secure,
-      path: baseCookie.path
-    }
-  });
-
-  res.cookie('accessToken', accessToken, {
-    ...baseCookie,
-    maxAge: 30 * 60 * 1000
-  });
-  res.cookie('refreshToken', refreshToken, refreshCookieOpts);
-
-  return res.json({
-    message: 'Login berhasil',
-    role: user.role,
-    accessExpiresInSec: 1800
-  });
+  res
+    .cookie('accessToken', accessToken, {
+      ...baseCookie,
+      maxAge: 30 * 60 * 1000
+    })
+    .cookie('refreshToken', refreshToken, refreshCookieOpts)
+    .json({
+      message: 'Login berhasil',
+      role: user.role,
+      accessExpiresInSec: 1800
+    });
 });
 
 const logoutUser = asyncHandler(async (req, res) => {

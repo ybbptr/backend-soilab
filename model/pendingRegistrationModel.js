@@ -12,7 +12,12 @@ const pendingRegistrationSchema = new mongoose.Schema(
     name: { type: String, required: true },
     phone: { type: String, required: true },
     passwordHash: { type: String, required: true },
-
+    delivery: {
+      type: String,
+      enum: ['gmail', 'whatsapp'],
+      default: 'gmail',
+      index: true
+    },
     otpHash: { type: String, required: true },
     otpExpiresAt: { type: Date, required: true },
     resendAfter: { type: Date, required: true },

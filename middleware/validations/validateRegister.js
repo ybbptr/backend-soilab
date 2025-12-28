@@ -19,7 +19,9 @@ const registerSchema = Joi.object({
     'string.min': 'Kata sandi minimal terdiri dari 8 karakter!',
     'any.required': 'Kata sandi wajib diisi!'
   }),
-
+  delivery: Joi.string().valid('gmail', 'whatsapp').optional().messages({
+    'any.only': 'Delivery OTP harus gmail atau whatsapp!'
+  }),
   phone: Joi.string()
     .pattern(/^[0-9]{10,15}$/)
     .required()
