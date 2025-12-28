@@ -12,11 +12,14 @@ const generateTokens = async (
 ) => {
   const sid = randomUUID();
 
-  const refreshToken = issueRefreshToken(
-    { _id: user._id, role: user.role, name: user.name },
-    sid,
-    remember
-  );
+  const payload = {
+    sub: user._id.toString(),
+    role: user.role,
+    name: user.name
+  };
+
+  // 🔥 refresh token
+  const refreshToken = issueRefreshToken(payload, sid, remember);
 
   const maxAgeSec = 7 * 24 * 3600;
   await Session.create({
@@ -30,11 +33,8 @@ const generateTokens = async (
     expiresAt: new Date(Date.now() + maxAgeSec * 1000)
   });
 
-  const accessToken = issueAccessToken({
-    _id: user._id,
-    role: user.role,
-    name: user.name
-  });
+  // 🔥 access token
+  const accessToken = issueAccessToken(payload);
 
   return { accessToken, refreshToken };
 };

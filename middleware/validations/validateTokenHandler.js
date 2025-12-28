@@ -18,6 +18,12 @@ const validateToken = asyncHandler(async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    if (!decoded.sub) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token invalid (missing sub)'
+      });
+    }
 
     req.user = {
       id: decoded.sub,
