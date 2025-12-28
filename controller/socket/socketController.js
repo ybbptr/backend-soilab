@@ -256,16 +256,7 @@ async function onConnection(nsp, socket) {
                 type: conv.type ?? undefined
               }
             });
-            let displayName;
-
-            if (conv.type === 'direct') {
-              const other = conv.members.find(
-                (m) => String(m.user._id) !== String(actor.userId)
-              );
-              displayName = other?.user?.name;
-            } else {
-              displayName = conv.title;
-            }
+            const displayName = actor.name;
 
             // sentuh sidebar: room percakapan + personal rooms
             const memberIds = (conv.members || []).map((m) => String(m.user));
@@ -279,6 +270,8 @@ async function onConnection(nsp, socket) {
             };
 
             nsp.to(String(conversationId)).emit('conv:touch', touchPayload);
+            console.log('DISPLAY NAME =>', displayName);
+
             memberIds.forEach((id) =>
               nsp.to(id).emit('conv:touch', touchPayload)
             );
@@ -324,16 +317,7 @@ async function onConnection(nsp, socket) {
             type: conv.type ?? undefined
           }
         });
-        let displayName;
-
-        if (conv.type === 'direct') {
-          const other = conv.members.find(
-            (m) => String(m.user._id) !== String(actor.userId)
-          );
-          displayName = other?.user?.name;
-        } else {
-          displayName = conv.title;
-        }
+        const displayName = actor.name;
 
         // sentuh sidebar (revive & naikkan) → ke room percakapan + personal rooms
         const memberIds = (conv.members || []).map((m) => String(m.user));
@@ -345,6 +329,7 @@ async function onConnection(nsp, socket) {
           displayName,
           type: conv.type
         };
+        console.log('DISPLAY NAME =>', displayName);
 
         nsp.to(String(conversationId)).emit('conv:touch', touchPayload);
         memberIds.forEach((id) => nsp.to(id).emit('conv:touch', touchPayload));
@@ -491,16 +476,7 @@ async function onConnection(nsp, socket) {
 
         await Message.deleteOne({ _id: msg._id });
 
-        let displayName;
-
-        if (conv.type === 'direct') {
-          const other = conv.members.find(
-            (m) => String(m.user._id) !== String(actor.userId)
-          );
-          displayName = other?.user?.name;
-        } else {
-          displayName = conv.title;
-        }
+        const displayName = actor.name;
 
         const last = await refreshConvLastMessage(conv._id);
         const touchPayload = {
@@ -527,6 +503,8 @@ async function onConnection(nsp, socket) {
           messageId: String(msg._id),
           mode: 'hard'
         });
+
+        console.log('DISPLAY NAME =>', displayName);
 
         const memberIds = (conv.members || []).map((m) => String(m.user));
         nsp.to(String(conv._id)).emit('conv:touch', touchPayload);
