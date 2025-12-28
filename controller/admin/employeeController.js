@@ -414,10 +414,6 @@ const downloadEmployeeDocs = asyncHandler(async (req, res) => {
 });
 
 const resetEmployeePassword = asyncHandler(async (req, res) => {
-  if (req.user.role !== 'admin') {
-    throwError('Akses ditolak. Hanya admin yang diizinkan.', 403);
-  }
-
   const { id } = req.params;
   const { newPassword } = req.body;
 
@@ -446,10 +442,6 @@ const resetEmployeePassword = asyncHandler(async (req, res) => {
 });
 
 const updateEmployeeEmail = asyncHandler(async (req, res) => {
-  if (req.user.role !== 'admin') {
-    throwError('Akses ditolak', 403);
-  }
-
   const { id } = req.params;
   const { email } = req.body;
 
