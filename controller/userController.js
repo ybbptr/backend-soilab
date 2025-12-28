@@ -721,9 +721,12 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     updatedAt: user.updatedAt
   };
 
-  // 🔥 hanya karyawan yang punya pages
   if (user.role === 'karyawan') {
-    response.pages = req.user.pages || [];
+    const employee = await Employee.findOne({ user: user._id })
+      .select('pages')
+      .lean();
+
+    response.pages = employee?.pages || [];
   }
 
   res.status(200).json(response);
