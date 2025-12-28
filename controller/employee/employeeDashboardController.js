@@ -9,10 +9,6 @@ const Employee = require('../../model/employeeModel');
 const PvReport = require('../../model/pvReportModel');
 
 const getEmployeeDashboard = asyncHandler(async (req, res) => {
-  if (req.user.role !== 'karyawan') {
-    throwError('Akses ditolak', 403);
-  }
-
   const me = await Employee.findOne({ user: req.user.id }).select('_id').lean();
 
   if (!me) {
