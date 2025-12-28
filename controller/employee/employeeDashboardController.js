@@ -25,7 +25,7 @@ const getEmployeeDashboard = asyncHandler(async (req, res) => {
     ProgressProject.countDocuments(),
 
     ExpenseRequest.countDocuments({
-      created_by: me._id
+      name: me._id
     }),
 
     PvReport.countDocuments({
