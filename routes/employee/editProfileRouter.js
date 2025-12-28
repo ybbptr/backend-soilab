@@ -6,7 +6,7 @@ const {
 } = require('../../controller/employee/editProfileController');
 const validate = require('../../middleware/validations/validate');
 const {
-  employeeUpdateValidation
+  employeeMyProfileValidation
 } = require('../../middleware/validations/validateEmployee');
 
 const multer = require('multer');
@@ -42,7 +42,7 @@ Router.put(
     { name: 'kelakuan_baik', maxCount: 1 },
     { name: 'vaksinasi', maxCount: 1 }
   ]),
-  validate(employeeUpdateValidation),
+  validate(employeeMyProfileValidation),
   updateMyProfile
 );
 

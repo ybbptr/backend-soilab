@@ -151,4 +151,82 @@ const employeeUpdateValidation = Joi.object({
   end_date: Joi.date().allow(null)
 });
 
-module.exports = { employeeCreateValidation, employeeUpdateValidation };
+const employeeMyProfileValidation = Joi.object({
+  // ======================
+  // DATA PERSONAL (BOLEH)
+  // ======================
+  name: Joi.string().min(2).messages({
+    'string.base': 'Nama harus berupa teks',
+    'string.min': 'Minimal berisi 2 huruf'
+  }),
+
+  nik: Joi.string()
+    .pattern(/^[0-9]+$/)
+    .length(16)
+    .messages({
+      'string.pattern.base': 'NIK hanya boleh berisi angka',
+      'string.length': 'NIK harus 16 digit'
+    }),
+
+  age: Joi.number().integer().positive().min(1).messages({
+    'number.base': 'Umur harus berupa angka',
+    'number.min': 'Umur minimal 1 tahun',
+    'number.positive': 'Umur harus lebih dari 0',
+    'number.integer': 'Umur harus bilangan bulat'
+  }),
+
+  phone: Joi.string()
+    .pattern(/^[0-9]{10,15}$/)
+    .messages({
+      'string.pattern.base':
+        'Nomor telepon harus terdiri dari 10 sampai 15 digit angka'
+    }),
+
+  address: Joi.string().messages({
+    'string.base': 'Alamat harus berupa teks'
+  }),
+
+  religion: Joi.string()
+    .valid('Islam', 'Protestan', 'Katolik', 'Budha', 'Hindu', 'Konghucu')
+    .allow(null, ''),
+
+  height: Joi.number().positive(),
+  weight: Joi.number().positive(),
+
+  number_of_children: Joi.number().integer().min(0).allow(null),
+
+  place_of_birth: Joi.string().allow(null, ''),
+  date_of_birth: Joi.date().allow(null),
+
+  status: Joi.string().valid('Menikah', 'Belum Menikah').allow(null, ''),
+
+  bank_account_number: Joi.string().allow(null, ''),
+
+  emergency_contact_number: Joi.string()
+    .pattern(/^[0-9]{10,15}$/)
+    .allow(null, '')
+    .messages({
+      'string.pattern.base':
+        'Nomor telepon harus terdiri dari 10 sampai 15 digit angka'
+    }),
+
+  blood_type: Joi.string().valid('A', 'B', 'AB', 'O').allow(null, ''),
+
+  // ======================
+  // DOKUMEN (BOLEH)
+  // ======================
+  documents: Joi.object({
+    ktp: Joi.string().allow(null, ''),
+    asuransi: Joi.string().allow(null, ''),
+    mcu: Joi.string().allow(null, ''),
+    keterangan_sehat: Joi.string().allow(null, ''),
+    kelakuan_baik: Joi.string().allow(null, ''),
+    vaksinasi: Joi.string().allow(null, '')
+  }).allow(null)
+}).unknown(false);
+
+module.exports = {
+  employeeCreateValidation,
+  employeeUpdateValidation,
+  employeeMyProfileValidation
+};
