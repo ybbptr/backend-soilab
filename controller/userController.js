@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 
 const OtpChallenge = require('../model/otpChallengeModel');
 const User = require('../model/userModel');
+const Employee = require('../model/employeeModel');
 const Session = require('../model/sessionModel');
 const PendingRegistration = require('../model/pendingRegistrationModel');
 
