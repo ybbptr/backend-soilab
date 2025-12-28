@@ -784,7 +784,10 @@ const loginUser = asyncHandler(async (req, res) => {
 
   if (!email || !password) throwError('Email dan password wajib diisi', 400);
 
-  const user = await User.findOne({ email }).select('+password oauthProvider');
+  const user = await User.findOne({ email }).select(
+    '+password oauthProvider role name email phone'
+  );
+
   if (!user) throwError('Email tidak ditemukan', 401);
   if (user.role === 'bot') throwError('Akun bot tidak bisa login', 403);
 
