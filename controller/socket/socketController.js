@@ -273,7 +273,7 @@ async function onConnection(nsp, socket) {
             console.log('DISPLAY NAME =>', displayName);
 
             memberIds.forEach((id) =>
-              nsp.to(id).emit('conv:touch', touchPayload)
+              nsp.to(id).emit('c onv:touch', touchPayload)
             );
 
             // **penting**: kirim conv:upsert dengan payload lengkap (viewer-specific)
